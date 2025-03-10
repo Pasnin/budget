@@ -271,6 +271,14 @@ def main():
     with tab2:
         st.header('Edit Your Budget')
         
+        # Add helper text to explain the process
+        st.info("""
+        📝 **How to update your budget:**
+        1. Modify any values in the income and expense fields below
+        2. Click the 'Update Budget' button at the bottom to save your changes
+        3. All changes are saved automatically to your personal budget file
+        """)
+        
         # Income Section
         st.subheader('Income')
         income_cols = st.columns(len(INCOME_CATEGORIES))
@@ -304,12 +312,42 @@ def main():
         
         # Save changes
         if st.button('Update Budget'):
+            # Save the current budget data
             save_budget_data(budget_data, user_id)
-            st.success('Budget updated successfully!')
+            
+            # Show success message with more details
+            st.success('Budget updated successfully! Your changes have been saved.')
+            
+            # Show a summary of the updated budget
+            total_income = get_total_income(budget_data['income'])
+            total_expenses = get_total_expenses(budget_data['expenses'])
+            savings = get_savings(total_income, total_expenses)
+            
+            # Display the updated summary
+            st.info(f"""
+            **Updated Budget Summary:**
+            - **Total Income:** {total_income:,.0f} {DEFAULT_CURRENCY}
+            - **Total Expenses:** {total_expenses:,.0f} {DEFAULT_CURRENCY}
+            - **Savings:** {savings:,.0f} {DEFAULT_CURRENCY}
+            - **Savings Rate:** {(savings/total_income*100 if total_income > 0 else 0):.1f}%
+            """)
+            
+            # Rerun the app to ensure all data is fresh
+            st.rerun()
     
     # Save/Load Tab
     with tab3:
         st.header('Save or Load Budget Presets')
+        
+        # Add helper text
+        st.info("""
+        💾 **Budget Presets:**
+        - Save different versions of your budget as named presets
+        - Load previously saved presets anytime
+        - Reset to default values if needed
+        
+        Your current budget is always automatically saved to your user profile.
+        """)
         
         col1, col2 = st.columns(2)
         
@@ -326,6 +364,13 @@ def main():
                 with open(file_path, 'w') as f:
                     json.dump(budget_data, f, indent=4)
                 st.success(f'Budget saved as preset: {save_name}!')
+                
+                # Show the list of available presets
+                preset_files = [f for f in os.listdir(preset_dir) if f.endswith('.json')]
+                if preset_files:
+                    st.write('Your saved presets:')
+                    for preset in preset_files:
+                        st.write(f"- {preset.replace('.json', '')}")
         
         with col2:
             st.subheader('Load Saved Preset')
@@ -347,11 +392,12 @@ def main():
                         except Exception as e:
                             st.error(f'Error loading budget: {e}')
                 else:
-                    st.info('No saved presets found.')
+                    st.info('No saved presets found. Create a preset by saving your current budget.')
             else:
-                st.info('No saved presets found.')
+                st.info('No saved presets found. Create a preset by saving your current budget.')
         
         st.subheader('Reset to Default')
+        st.warning('⚠️ This will reset all your budget values to the default amounts. This cannot be undone.')
         if st.button('Reset to Default Values'):
             default_budget = get_default_budget()
             save_budget_data(default_budget, user_id)
