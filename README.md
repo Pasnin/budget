@@ -1,13 +1,15 @@
 # Budget Analyzer
 
-A Streamlit web application for managing and analyzing personal budgets in Norwegian Crowns (NOK).
+A Streamlit web application for managing and analyzing personal budgets in Norwegian Crowns (NOK). The application supports multiple users, with each user having their own budget data.
 
 ## Features
 
+- **Multi-User Support**: Each user has their own budget data and presets
+- **User Authentication**: Simple username/password login system
 - **Dashboard**: Visualize your income, expenses, and savings
 - **Multiple Expense Categories**: Track spending across various categories
 - **Customizable**: Edit default values to match your personal financial situation
-- **Save/Load**: Save different budget configurations and load them when needed
+- **Presets**: Save different budget configurations as presets and load them when needed
 - **Data Persistence**: Budget data is automatically saved between sessions
 
 ## Default Data
@@ -34,13 +36,20 @@ streamlit run app.py
 
 ## Usage
 
+### User Authentication
+
+1. Create a new account by entering a username and password, then clicking "Create New Account"
+2. Login to an existing account by entering your username and password, then clicking "Login"
+
+### Main Features
+
 The application consists of three main tabs:
 
 1. **Dashboard**: View visualizations of your budget including income vs. expenses, expense breakdown by category, and your top expenses.
 
 2. **Edit Budget**: Update your income and expense values. Changes are saved when you click the "Update Budget" button.
 
-3. **Save/Load**: Save your current budget configuration with a custom name or load a previously saved budget. You can also reset to default values.
+3. **Save/Load**: Save your current budget configuration as a preset with a custom name or load a previously saved preset. You can also reset to default values.
 
 ## Requirements
 

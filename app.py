@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import json
 import os
+import hashlib
 from datetime import datetime
 
 # Set page configuration
@@ -70,14 +71,59 @@ DEFAULT_VALUES = {
     'Miscellaneous': 1000
 }
 
-# Functions for data handling
-def load_budget_data():
-    """Load budget data from file or return default data."""
-    if os.path.exists('budget_data.json'):
-        with open('budget_data.json', 'r') as f:
-            return json.load(f)
+# Make sure the data directory exists
+if not os.path.exists('user_data'):
+    os.makedirs('user_data')
+
+# User authentication and session management
+def get_user_id():
+    """Get or create a user ID for the session"""
+    if 'user_id' not in st.session_state:
+        # User login section
+        if 'logged_in' not in st.session_state:
+            st.session_state.logged_in = False
+            st.session_state.username = ''
+            
+        if not st.session_state.logged_in:
+            st.sidebar.title('User Login')
+            username = st.sidebar.text_input('Username')
+            password = st.sidebar.text_input('Password', type='password')
+            
+            if st.sidebar.button('Login'):
+                if username and password:  # Simple validation
+                    # Create a hash of the username for the user ID
+                    user_id = hashlib.md5(username.encode()).hexdigest()
+                    st.session_state.user_id = user_id
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.sidebar.success(f'Welcome, {username}!')
+                    st.experimental_rerun()
+                else:
+                    st.sidebar.error('Please enter a username and password')
+            
+            # Option to create a new account
+            if st.sidebar.button('Create New Account'):
+                if username and password:
+                    user_id = hashlib.md5(username.encode()).hexdigest()
+                    st.session_state.user_id = user_id
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.sidebar.success(f'Account created! Welcome, {username}!')
+                    # Create default budget for new user
+                    default_budget = get_default_budget()
+                    save_budget_data(default_budget, user_id)
+                    st.experimental_rerun()
+                else:
+                    st.sidebar.error('Please enter a username and password')
+            
+            # Hide the main content until logged in
+            st.stop()
     
-    # Return default data structure
+    return st.session_state.user_id
+
+# Functions for data handling
+def get_default_budget():
+    """Return default budget data structure."""
     budget_data = {
         'income': {category: DEFAULT_VALUES.get(category, 0) for category in INCOME_CATEGORIES},
         'expenses': {}
@@ -90,9 +136,32 @@ def load_budget_data():
     
     return budget_data
 
-def save_budget_data(data):
+def get_user_file_path(user_id):
+    """Get the file path for a user's budget data."""
+    return os.path.join('user_data', f'{user_id}.json')
+
+def load_budget_data(user_id=None):
+    """Load budget data from file or return default data."""
+    if user_id is None:
+        user_id = get_user_id()
+        
+    file_path = get_user_file_path(user_id)
+    
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    
+    # Return default data structure if no file exists
+    return get_default_budget()
+
+def save_budget_data(data, user_id=None):
     """Save budget data to file."""
-    with open('budget_data.json', 'w') as f:
+    if user_id is None:
+        user_id = get_user_id()
+        
+    file_path = get_user_file_path(user_id)
+    
+    with open(file_path, 'w') as f:
         json.dump(data, f, indent=4)
 
 def get_total_income(income_data):
@@ -131,10 +200,21 @@ def get_expense_breakdown(expenses_data):
 
 # Main application
 def main():
+    # Get the user ID (this also handles authentication)
+    user_id = get_user_id()
+    
+    # Display user info in the sidebar
+    st.sidebar.title('User Info')
+    st.sidebar.write(f'Logged in as: {st.session_state.username}')
+    if st.sidebar.button('Logout'):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.experimental_rerun()
+    
     st.title('💰 Budget Analyzer')
     
-    # Load budget data
-    budget_data = load_budget_data()
+    # Load budget data for the current user
+    budget_data = load_budget_data(user_id)
     
     # Main tabs
     tab1, tab2, tab3 = st.tabs(['📊 Dashboard', '📝 Edit Budget', '💾 Save/Load'])
@@ -201,7 +281,8 @@ def main():
                     f"{category} ({DEFAULT_CURRENCY})",
                     min_value=0,
                     value=budget_data['income'][category],
-                    step=100
+                    step=100,
+                    key=f"income_{category}"
                 )
         
         # Expenses Section
@@ -217,53 +298,63 @@ def main():
                             f"{subcategory} ({DEFAULT_CURRENCY})",
                             min_value=0,
                             value=budget_data['expenses'][category][subcategory],
-                            step=100
+                            step=100,
+                            key=f"expense_{category}_{subcategory}"
                         )
         
         # Save changes
         if st.button('Update Budget'):
-            save_budget_data(budget_data)
+            save_budget_data(budget_data, user_id)
             st.success('Budget updated successfully!')
     
     # Save/Load Tab
     with tab3:
-        st.header('Save or Load Budget Data')
+        st.header('Save or Load Budget Presets')
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader('Save Current Budget')
-            save_name = st.text_input('Budget Name', f'Budget_{datetime.now().strftime("%Y%m%d")}')
+            st.subheader('Save Current Budget as Preset')
+            save_name = st.text_input('Preset Name', f'Budget_{datetime.now().strftime("%Y%m%d")}')
             
-            if st.button('Save Budget'):
-                file_path = f"{save_name}.json"
+            if st.button('Save Budget Preset'):
+                preset_dir = os.path.join('user_data', user_id)
+                if not os.path.exists(preset_dir):
+                    os.makedirs(preset_dir)
+                
+                file_path = os.path.join(preset_dir, f"{save_name}.json")
                 with open(file_path, 'w') as f:
                     json.dump(budget_data, f, indent=4)
-                st.success(f'Budget saved as {file_path}!')
+                st.success(f'Budget saved as preset: {save_name}!')
         
         with col2:
-            st.subheader('Load Saved Budget')
-            saved_files = [f for f in os.listdir('.') if f.endswith('.json')]
+            st.subheader('Load Saved Preset')
+            preset_dir = os.path.join('user_data', user_id)
             
-            if saved_files:
-                selected_file = st.selectbox('Select a saved budget', saved_files)
+            if os.path.exists(preset_dir):
+                preset_files = [f for f in os.listdir(preset_dir) if f.endswith('.json')]
                 
-                if st.button('Load Selected Budget'):
-                    try:
-                        with open(selected_file, 'r') as f:
-                            loaded_data = json.load(f)
-                        save_budget_data(loaded_data)
-                        st.success(f'Budget loaded from {selected_file}!')
-                        st.experimental_rerun()
-                    except Exception as e:
-                        st.error(f'Error loading budget: {e}')
+                if preset_files:
+                    selected_file = st.selectbox('Select a saved preset', preset_files)
+                    
+                    if st.button('Load Selected Preset'):
+                        try:
+                            with open(os.path.join(preset_dir, selected_file), 'r') as f:
+                                loaded_data = json.load(f)
+                            save_budget_data(loaded_data, user_id)
+                            st.success(f'Budget loaded from preset: {selected_file}!')
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f'Error loading budget: {e}')
+                else:
+                    st.info('No saved presets found.')
             else:
-                st.info('No saved budgets found.')
+                st.info('No saved presets found.')
         
         st.subheader('Reset to Default')
         if st.button('Reset to Default Values'):
-            if os.path.exists('budget_data.json'):
-                os.remove('budget_data.json')
+            default_budget = get_default_budget()
+            save_budget_data(default_budget, user_id)
             st.success('Budget reset to default values!')
             st.experimental_rerun()
 
