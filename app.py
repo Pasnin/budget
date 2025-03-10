@@ -97,7 +97,7 @@ def get_user_id():
                     st.session_state.logged_in = True
                     st.session_state.username = username
                     st.sidebar.success(f'Welcome, {username}!')
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.sidebar.error('Please enter a username and password')
             
@@ -112,7 +112,7 @@ def get_user_id():
                     # Create default budget for new user
                     default_budget = get_default_budget()
                     save_budget_data(default_budget, user_id)
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.sidebar.error('Please enter a username and password')
             
@@ -209,7 +209,7 @@ def main():
     if st.sidebar.button('Logout'):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
-        st.experimental_rerun()
+        st.rerun()
     
     st.title('💰 Budget Analyzer')
     
@@ -343,7 +343,7 @@ def main():
                                 loaded_data = json.load(f)
                             save_budget_data(loaded_data, user_id)
                             st.success(f'Budget loaded from preset: {selected_file}!')
-                            st.experimental_rerun()
+                            st.rerun()
                         except Exception as e:
                             st.error(f'Error loading budget: {e}')
                 else:
@@ -356,7 +356,7 @@ def main():
             default_budget = get_default_budget()
             save_budget_data(default_budget, user_id)
             st.success('Budget reset to default values!')
-            st.experimental_rerun()
+            st.rerun()
 
 if __name__ == '__main__':
     main() 
