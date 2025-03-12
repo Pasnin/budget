@@ -6,6 +6,7 @@ import json
 import os
 import hashlib
 from datetime import datetime
+import io
 
 # Set page configuration
 st.set_page_config(
@@ -291,6 +292,117 @@ def generate_savings_suggestions(budget_data):
     
     return suggestions
 
+def export_to_excel(budget_data):
+    """Create an Excel file with budget data and return it as a bytes object."""
+    # Create a BytesIO object to store the Excel file
+    output = io.BytesIO()
+    
+    # Get data
+    income_data = budget_data['income']
+    expenses_data = budget_data['expenses']
+    
+    total_income = get_total_income(income_data)
+    total_expenses = get_total_expenses(expenses_data)
+    savings = get_savings(total_income, total_expenses)
+    savings_rate = (savings/total_income*100 if total_income > 0 else 0)
+    
+    # Create polars dataframes with strict=False to allow mixed types
+    # Summary dataframe - use explicit float values to avoid type errors
+    try:
+        summary_df = pl.DataFrame({
+            'Category': ['Total Income', 'Total Expenses', 'Savings', 'Savings Rate (%)'],
+            'Amount': [
+                float(total_income), 
+                float(total_expenses), 
+                float(savings), 
+                float(savings_rate)
+            ]
+        })
+    except TypeError:
+        # Fallback with strict=False
+        summary_df = pl.DataFrame({
+            'Category': ['Total Income', 'Total Expenses', 'Savings', 'Savings Rate (%)'],
+            'Amount': [
+                total_income, 
+                total_expenses, 
+                savings, 
+                savings_rate
+            ]
+        }, strict=False)
+    
+    # Income breakdown
+    try:
+        income_rows = [{'Category': source, 'Amount': float(amount)} for source, amount in income_data.items()]
+        income_df = pl.DataFrame(income_rows)
+    except TypeError:
+        # Fallback with strict=False
+        income_rows = [{'Category': source, 'Amount': amount} for source, amount in income_data.items()]
+        income_df = pl.DataFrame(income_rows, strict=False)
+    
+    # Expense breakdown - flat view for Excel
+    expense_rows = []
+    for category, subcategories in expenses_data.items():
+        category_total = sum(subcategories.values())
+        expense_rows.append({
+            'Main Category': category,
+            'Subcategory': 'TOTAL',
+            'Amount': float(category_total),
+            'Percentage of Income': f'{(category_total/total_income*100 if total_income > 0 else 0):.1f}%'
+        })
+        
+        for subcategory, amount in subcategories.items():
+            if amount > 0:  # Only include subcategories with expenses
+                expense_rows.append({
+                    'Main Category': category,
+                    'Subcategory': subcategory,
+                    'Amount': float(amount),
+                    'Percentage of Category': f'{(amount/category_total*100 if category_total > 0 else 0):.1f}%',
+                    'Percentage of Income': f'{(amount/total_income*100 if total_income > 0 else 0):.1f}%'
+                })
+    
+    try:
+        expense_df = pl.DataFrame(expense_rows)
+    except TypeError:
+        # Fallback with strict=False
+        expense_df = pl.DataFrame(expense_rows, strict=False)
+    
+    # Convert to pandas and write to Excel
+    with pl.Config(tbl_hide_dataframe_shape=True, tbl_rows=-1):
+        # Create a Pandas ExcelWriter object
+        import pandas as pd
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Write each dataframe to a different worksheet
+            summary_df.to_pandas().to_excel(writer, sheet_name='Summary', index=False)
+            income_df.to_pandas().to_excel(writer, sheet_name='Income', index=False)
+            expense_df.to_pandas().to_excel(writer, sheet_name='Expenses', index=False)
+            
+            # Access the workbook and the worksheets
+            workbook = writer.book
+            
+            # Format the summary sheet
+            summary_sheet = writer.sheets['Summary']
+            # Add currency formatting
+            for row in range(2, 4):  # For Income, Expenses, and Savings
+                cell = summary_sheet.cell(row=row, column=2)
+                cell.number_format = '#,##0 "NOK"'
+            
+            # Format the income sheet
+            income_sheet = writer.sheets['Income']
+            for row in range(2, len(income_rows) + 2):
+                cell = income_sheet.cell(row=row, column=2)
+                cell.number_format = '#,##0 "NOK"'
+            
+            # Format the expenses sheet
+            expense_sheet = writer.sheets['Expenses']
+            for row in range(2, len(expense_rows) + 2):
+                cell = expense_sheet.cell(row=row, column=3)
+                cell.number_format = '#,##0 "NOK"'
+    
+    # Seek to the beginning of the stream
+    output.seek(0)
+    
+    return output
+
 # Main application
 def main():
     # Get the user ID (this also handles authentication)
@@ -327,6 +439,19 @@ def main():
         col2.metric(label="Total Expenses", value=f"{total_expenses:,.0f} {DEFAULT_CURRENCY}")
         col3.metric(label="Savings", value=f"{savings:,.0f} {DEFAULT_CURRENCY}")
         col4.metric(label="Savings Rate", value=f"{(savings/total_income*100 if total_income > 0 else 0):.1f}%")
+        
+        # NEW: Add Excel export button
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Export Data")
+        
+        excel_data = export_to_excel(budget_data)
+        st.sidebar.download_button(
+            label="📥 Download Budget as Excel",
+            data=excel_data,
+            file_name=f"budget_export_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Download all your budget data as an Excel file with detailed summary and breakdowns"
+        )
         
         st.subheader('Income vs. Expenses')
         summary_data = pl.DataFrame({
