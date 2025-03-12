@@ -361,27 +361,108 @@ def main():
             
             # NEW: Add treemap visualization for all expense categories
             st.subheader('Detailed Expense Breakdown')
+            
+            # Prepare data for hierarchical visualizations
+            # Convert to pandas format for visualization
             all_expenses = expense_df.to_pandas()
             
-            # Create a treemap (hierarchical visualization)
-            fig3 = px.treemap(
-                all_expenses, 
-                path=['Category'], 
-                values='Amount',
+            # Create a hierarchical data structure for the treemap
+            hierarchy_data = []
+            
+            # Add main categories first
+            for category in main_categories.to_pandas().itertuples():
+                hierarchy_data.append({
+                    'id': category.Category,
+                    'parent': '',
+                    'value': category.Amount,
+                    'name': category.Category,
+                    'is_root': True  # Flag to identify root nodes
+                })
+            
+            # Add subcategories
+            for subcategory in expense_df.filter(pl.col('Category').str.contains(' - ')).to_pandas().itertuples():
+                # Extract parent category and subcategory name
+                parts = subcategory.Category.split(' - ')
+                parent_category = parts[0]
+                subcategory_name = parts[1]
+                
+                hierarchy_data.append({
+                    'id': subcategory.Category,
+                    'parent': parent_category,
+                    'value': subcategory.Amount,
+                    'name': subcategory_name,
+                    'is_root': False  # Flag to identify non-root nodes
+                })
+            
+            # Prepare the data for visualization
+            ids = [item['id'] for item in hierarchy_data]
+            labels = [item['name'] for item in hierarchy_data]
+            parents = [item['parent'] for item in hierarchy_data]
+            values = [item['value'] for item in hierarchy_data]
+            
+            # Create separate hover templates for main categories and subcategories
+            hover_templates = []
+            for item in hierarchy_data:
+                if item['is_root']:
+                    # For main categories
+                    hover_templates.append(f"<b>{item['name']}</b><br>Amount: {item['value']:,.0f} NOK<br>% of total expenses")
+                else:
+                    # For subcategories
+                    hover_templates.append(f"<b>{item['name']}</b><br>Amount: {item['value']:,.0f} NOK<br>% of {item['parent']}<br>% of total expenses")
+            
+            # Create treemap using go.Treemap
+            fig3 = go.Figure(go.Treemap(
+                ids=ids,
+                labels=labels,
+                parents=parents,
+                values=values,
+                branchvalues='total',
+                texttemplate='<b>%{label}</b><br>%{value:,.0f} NOK',
+                marker=dict(colorscale='Blues'),
+                hoverinfo='none',  # Use 'none' and rely on hovertemplate instead
+                hovertemplate="""
+<b>%{label}</b><br>
+Amount: %{value:,.0f} NOK<br>
+%{percentRoot:.1%} of total expenses<br>
+%{percentParent:.1%} of %{parent}
+<extra></extra>
+"""
+            ))
+            
+            fig3.update_layout(
                 title='Hierarchical View of All Expenses',
-                color_discrete_sequence=px.colors.qualitative.Pastel
+                margin=dict(t=50, l=25, r=25, b=25)
             )
+            
             st.plotly_chart(fig3, use_container_width=True)
             
             # NEW: Add a sunburst chart (radial hierarchical visualization)
             st.subheader('Expense Categories Visualization')
-            fig4 = px.sunburst(
-                all_expenses, 
-                path=['Category'], 
-                values='Amount',
+            
+            # Use the same hierarchy data for the sunburst chart
+            fig4 = go.Figure(go.Sunburst(
+                ids=ids,
+                labels=labels,
+                parents=parents,
+                values=values,
+                branchvalues='total',
+                texttemplate='<b>%{label}</b>',
+                marker=dict(colorscale='Viridis'),
+                hoverinfo='none',  # Use 'none' and rely on hovertemplate instead
+                hovertemplate="""
+<b>%{label}</b><br>
+Amount: %{value:,.0f} NOK<br>
+%{percentRoot:.1%} of total expenses<br>
+%{percentParent:.1%} of %{parent}
+<extra></extra>
+"""
+            ))
+            
+            fig4.update_layout(
                 title='Radial View of Expense Categories',
-                color_discrete_sequence=px.colors.qualitative.Bold
+                margin=dict(t=50, l=0, r=0, b=10)
             )
+            
             st.plotly_chart(fig4, use_container_width=True)
             
             # NEW: Income breakdown
@@ -408,7 +489,7 @@ def main():
             st.subheader('Budget Allocation')
             # Create a DataFrame with expense categories and their percentage of income
             expense_vs_income = main_categories.with_columns([
-                (pl.col('Amount') / total_income * 100).alias('Percentage_of_Income')
+                (pl.col('Amount') / total_income * 100).round(1).alias('Percentage_of_Income')
             ])
             
             fig6 = px.bar(
