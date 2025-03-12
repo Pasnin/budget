@@ -198,6 +198,99 @@ def get_expense_breakdown(expenses_data):
     
     return pl.DataFrame(data)
 
+def generate_savings_suggestions(budget_data):
+    """Generate personalized savings suggestions based on budget data."""
+    income_data = budget_data['income']
+    expenses_data = budget_data['expenses']
+    
+    total_income = get_total_income(income_data)
+    total_expenses = get_total_expenses(expenses_data)
+    current_savings = get_savings(total_income, total_expenses)
+    savings_rate = (current_savings / total_income * 100) if total_income > 0 else 0
+    
+    # Get expense breakdown
+    expense_df = get_expense_breakdown(expenses_data)
+    main_categories = expense_df.filter(~pl.col('Category').str.contains(' - ')).sort('Amount', descending=True)
+    subcategories = expense_df.filter(pl.col('Category').str.contains(' - ')).sort('Amount', descending=True)
+    
+    suggestions = []
+    
+    # Suggestion 1: Overall savings rate recommendation
+    if savings_rate < 20:
+        suggestions.append({
+            'title': 'Increase Your Savings Rate',
+            'description': f'Your current savings rate is {savings_rate:.1f}%. Financial experts recommend saving at least 20% of your income. Consider ways to increase your income or reduce expenses.',
+            'potential_savings': total_income * 0.2 - current_savings if current_savings < total_income * 0.2 else 0
+        })
+    
+    # Suggestion 2: Housing cost recommendation
+    housing_expenses = expenses_data.get('Housing', {})
+    housing_total = sum(housing_expenses.values())
+    housing_pct = (housing_total / total_income * 100) if total_income > 0 else 0
+    
+    if housing_pct > 30:
+        suggestions.append({
+            'title': 'Reduce Housing Costs',
+            'description': f'Your housing costs are {housing_pct:.1f}% of your income. The recommended maximum is 30%. Consider ways to reduce housing expenses.',
+            'potential_savings': housing_total - (total_income * 0.3) if housing_total > total_income * 0.3 else 0
+        })
+    
+    # Suggestion 3: Food expenses
+    food_expenses = expenses_data.get('Food', {})
+    eating_out = food_expenses.get('Eating Out', 0) + food_expenses.get('Food Delivery', 0)
+    groceries = food_expenses.get('Groceries', 0)
+    
+    if eating_out > groceries * 0.5 and eating_out > 0:
+        suggestions.append({
+            'title': 'Reduce Dining Out Expenses',
+            'description': f'You\'re spending {(eating_out / (eating_out + groceries) * 100):.1f}% of your food budget on dining out. Consider cooking more meals at home to save money.',
+            'potential_savings': eating_out * 0.5  # Assume 50% potential savings
+        })
+    
+    # Suggestion 4: Entertainment expenses
+    entertainment_expenses = expenses_data.get('Entertainment', {})
+    entertainment_total = sum(entertainment_expenses.values())
+    entertainment_pct = (entertainment_total / total_income * 100) if total_income > 0 else 0
+    
+    if entertainment_pct > 10:
+        suggestions.append({
+            'title': 'Review Entertainment Spending',
+            'description': f'You\'re spending {entertainment_pct:.1f}% of your income on entertainment. Consider finding free or lower-cost alternatives for some activities.',
+            'potential_savings': entertainment_total * 0.3  # Assume 30% potential savings
+        })
+    
+    # Suggestion 5: Check subscription services
+    streaming_services = expenses_data.get('Entertainment', {}).get('Streaming Services', 0)
+    if streaming_services > 800:  # More than 800 NOK
+        suggestions.append({
+            'title': 'Review Subscription Services',
+            'description': 'Your streaming service expenses are relatively high. Consider reviewing your subscriptions and canceling those you don\'t use regularly.',
+            'potential_savings': streaming_services * 0.4  # Assume 40% potential savings
+        })
+    
+    # Suggestion 6: Transportation costs
+    transport_expenses = expenses_data.get('Transportation', {})
+    transport_total = sum(transport_expenses.values())
+    transport_pct = (transport_total / total_income * 100) if total_income > 0 else 0
+    
+    if transport_pct > 15:
+        suggestions.append({
+            'title': 'Optimize Transportation Costs',
+            'description': f'You\'re spending {transport_pct:.1f}% of your income on transportation. Consider carpooling, public transport, or biking to reduce costs.',
+            'potential_savings': transport_total * 0.2  # Assume 20% potential savings
+        })
+    
+    # Always add a suggestion about emergency fund
+    emergency_fund = expenses_data.get('Savings', {}).get('Emergency Fund', 0)
+    if emergency_fund < total_income * 0.1:
+        suggestions.append({
+            'title': 'Build an Emergency Fund',
+            'description': 'Financial experts recommend having 3-6 months of expenses saved in an emergency fund. Consider increasing your monthly contribution.',
+            'potential_savings': -total_income * 0.1  # Negative because this is an increase in expenses
+        })
+    
+    return suggestions
+
 # Main application
 def main():
     # Get the user ID (this also handles authentication)
@@ -253,6 +346,7 @@ def main():
             expense_df = get_expense_breakdown(budget_data['expenses'])
             main_categories = expense_df.filter(~pl.col('Category').str.contains(' - ')).sort('Amount', descending=True)
             
+            # Pie chart for main categories
             fig1 = px.pie(main_categories.to_pandas(), values='Amount', names='Category', 
                         title='Expense Distribution by Category')
             st.plotly_chart(fig1, use_container_width=True)
@@ -264,6 +358,95 @@ def main():
                         title='Top 10 Individual Expenses')
             fig2.update_layout(xaxis_title=f'Amount ({DEFAULT_CURRENCY})', yaxis_title='')
             st.plotly_chart(fig2, use_container_width=True)
+            
+            # NEW: Add treemap visualization for all expense categories
+            st.subheader('Detailed Expense Breakdown')
+            all_expenses = expense_df.to_pandas()
+            
+            # Create a treemap (hierarchical visualization)
+            fig3 = px.treemap(
+                all_expenses, 
+                path=['Category'], 
+                values='Amount',
+                title='Hierarchical View of All Expenses',
+                color_discrete_sequence=px.colors.qualitative.Pastel
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+            
+            # NEW: Add a sunburst chart (radial hierarchical visualization)
+            st.subheader('Expense Categories Visualization')
+            fig4 = px.sunburst(
+                all_expenses, 
+                path=['Category'], 
+                values='Amount',
+                title='Radial View of Expense Categories',
+                color_discrete_sequence=px.colors.qualitative.Bold
+            )
+            st.plotly_chart(fig4, use_container_width=True)
+            
+            # NEW: Income breakdown
+            st.subheader('Income Breakdown')
+            income_data = pl.DataFrame([
+                {'Source': source, 'Amount': amount} 
+                for source, amount in budget_data['income'].items()
+                if amount > 0  # Only include sources with income
+            ])
+            
+            if len(income_data) > 0:
+                fig5 = px.pie(
+                    income_data.to_pandas(), 
+                    values='Amount', 
+                    names='Source',
+                    title='Income Sources Distribution',
+                    color_discrete_sequence=px.colors.sequential.Greens
+                )
+                st.plotly_chart(fig5, use_container_width=True)
+            else:
+                st.info('No income sources with values greater than zero.')
+            
+            # NEW: Expense vs Income by Category
+            st.subheader('Budget Allocation')
+            # Create a DataFrame with expense categories and their percentage of income
+            expense_vs_income = main_categories.with_columns([
+                (pl.col('Amount') / total_income * 100).alias('Percentage_of_Income')
+            ])
+            
+            fig6 = px.bar(
+                expense_vs_income.to_pandas(), 
+                x='Category', 
+                y='Percentage_of_Income',
+                title='Expense Categories as Percentage of Income',
+                color='Percentage_of_Income',
+                color_continuous_scale='Reds',
+                labels={'Percentage_of_Income': '% of Income'}
+            )
+            fig6.update_layout(yaxis_title='Percentage of Total Income (%)')
+            st.plotly_chart(fig6, use_container_width=True)
+            
+            # NEW: Savings Suggestions
+            st.header('💡 Savings Suggestions')
+            
+            suggestions = generate_savings_suggestions(budget_data)
+            
+            if suggestions:
+                total_potential_savings = sum(max(0, s['potential_savings']) for s in suggestions)
+                
+                st.info(f"""
+                Based on your current budget, we've identified potential savings of approximately 
+                **{total_potential_savings:,.0f} {DEFAULT_CURRENCY}** per month.
+                
+                Here are some personalized suggestions to help you optimize your budget:
+                """)
+                
+                for i, suggestion in enumerate(suggestions):
+                    with st.expander(f"{i+1}. {suggestion['title']}"):
+                        st.write(suggestion['description'])
+                        if suggestion['potential_savings'] > 0:
+                            st.write(f"**Potential monthly savings:** {suggestion['potential_savings']:,.0f} {DEFAULT_CURRENCY}")
+                        elif suggestion['potential_savings'] < 0:
+                            st.write(f"**Recommended additional expense:** {-suggestion['potential_savings']:,.0f} {DEFAULT_CURRENCY}")
+            else:
+                st.success("Your budget looks well-optimized! Keep up the good work.")
         else:
             st.info('No expense data to display. Please add expenses in the Edit Budget tab.')
     
